@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ทำไมเราตาจึงมองเห็น? – Video Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101B3D;--cy:#36C5F0;--vi:#7657D5;--pk:#F47CA8;--go:#FFD166;--tx:#F5F7FF}
+*{box-sizing:border-box}html,body{margin:0;background:#0a1230;color:var(--tx);font-family:Prompt,'Noto Sans Thai',Sarabun,system-ui,sans-serif}
+body{min-height:100dvh;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.w{max-width:760px;margin:0 auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+h1{font-size:18px;margin:4px 0}
+.card{background:#16255a;border-radius:16px;padding:12px}
+button,select,.btn{min-height:48px;border-radius:12px;border:0;background:var(--vi);color:#fff;font:inherit;padding:0 14px;font-size:15px}
+button.p{background:var(--cy);color:#06122e;font-weight:700}button.g{background:#26397a}button:disabled{opacity:.45}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#stage{position:relative;background:#000;border-radius:16px;overflow:hidden;display:flex;justify-content:center}
+#out{max-width:100%;max-height:62dvh;display:block;height:auto;width:auto}
+#safe{position:absolute;inset:0;pointer-events:none;display:none;border:2px dashed var(--go);margin:8% 6% 16%}
+input[type=range]{flex:1;min-width:120px;height:48px}
+.chips{display:flex;gap:6px;overflow-x:auto}.chips button{min-width:52px;background:#26397a}.chips button.on{background:var(--go);color:#06122e}
+small,.st{font-size:13px;opacity:.9;line-height:1.5}
+#err{display:none;background:#7a1c3a;border-radius:12px;padding:12px;font-size:14px}
+progress{width:100%;height:14px}
+table{width:100%;font-size:13px;border-collapse:collapse}td{padding:4px}
+video{width:100%;max-height:60dvh;border-radius:12px;background:#000}
+</style></head><body><div class="w">
+<h1>🎬 ทำไมเราตาจึงมองเห็น? — สตูดิโอสร้างวิดีโอ 3D</h1>
+<div id="err"></div>
+<div class="card"><b>1) นำเข้าเสียงพากย์</b>
+<div class="row" style="margin-top:8px"><input id="file" type="file" accept="audio/*,.mp3" style="display:none">
+<button class="p" onclick="$('file').click()">📂 เลือกไฟล์เสียง (MP3)</button></div>
+<div class="st" id="ainfo">ยังไม่ได้นำเข้าเสียง — เวลาโดยประมาณ ยังไม่ซิงก์กับเสียงจริง</div></div>
+<div id="stage"><canvas id="out"></canvas><div id="safe"></div></div>
+<div class="card"><div class="row">
+<button class="p" id="play">▶ เล่น</button><button class="g" id="stop">⏹ หยุด</button>
+<input type="range" id="seek" min="0" max="1000" value="0"><span id="time">0:00</span>
+<button class="g" id="mute">🔊</button><button class="g" id="fs">⛶</button></div>
+<div class="chips" id="chips" style="margin-top:8px"></div>
+<div class="st" id="sync"></div></div>
+<div class="card"><b>2) เลือกขนาดวิดีโอ</b>
+<div class="row" style="margin-top:8px">
+<select id="fmt"><option value="9:16">9:16 Reels/Stories</option><option value="4:5">4:5 Feed แนวตั้ง</option><option value="1:1">1:1 สี่เหลี่ยม</option><option value="16:9">16:9 แนวนอน</option></select>
+<select id="res"><option value="0">720p</option><option value="1">1080p</option></select>
+<button class="g" id="sz">Safe zone</button></div></div>
+<div class="card"><b>3) สร้างวิดีโอ</b>
+<div class="row" style="margin-top:8px"><button class="p" id="exp">🎞 สร้างวิดีโอ</button><button class="g" id="cancel" disabled>ยกเลิก</button></div>
+<progress id="prog" value="0" max="100"></progress><div class="st" id="est">พร้อม — การบันทึกใช้เวลาจริงเท่าความยาววิดีโอ (ต้องเปิดหน้านี้ค้างไว้)</div></div>
+<div class="card" id="res-card" style="display:none"><b>4) ผลลัพธ์</b><video id="rv" controls playsinline></video>
+<table id="rinfo"></table><div class="row" style="margin-top:8px"><button class="p" id="share">💾 บันทึก/แชร์</button><button class="g" id="again">สร้างใหม่</button></div>
+<small id="hint"></small></div>
+<details class="card"><summary style="min-height:40px">ปรับจุดซิงก์ (เริ่มฉาก ±0.1 วินาที)</summary><div id="sp"></div></details>
+<small>ซิงก์เป็นแบบ “ประมาณ” จากความดังของเสียงและความยาวบท ไม่ใช่ forced alignment — ตรวจและปรับเองได้</small>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" onerror="window.__e=1"></script>
+<script>
+const $=id=>document.getElementById(id),clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x)),lerp=(a,b,q)=>a+(b-a)*q;
+const ease=q=>q<.5?4*q*q*q:1-Math.pow(-2*q+2,3)/2,back=q=>{const c=1.7;return 1+(c+1)*Math.pow(q-1,3)+c*Math.pow(q-1,2)};
+function showErr(m){const e=$('err');e.style.display='block';e.textContent='⚠ '+m}
+window.addEventListener('error',e=>showErr('เกิดข้อผิดพลาด: '+e.message+' — ลองรีเฟรชหน้า'));
+if(window.__e||!window.THREE)showErr('โหลด Three.js ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วรีเฟรช');
+/* ============ OUTPUT G DATA (สรุปตามต้นฉบับ; บทพากย์ตรงทุกคำ) ============ */
+const PAL={bg:'#101B3D',cy:'#36C5F0',vi:'#7657D5',pk:'#F47CA8',go:'#FFD166',tx:'#F5F7FF'};
+const META={title:'ทำไมเราตาจึงมองเห็น?',channel:'รู้ไว้ใช่ว่า',audioDur:50.912625,bpm:110};
+const S=[
+{n:'เคยสงสัยไหมว่า... ทำไมเราแค่ลืมตา ถึงมองเห็นโลกทั้งใบได้?',hl:['สงสัย','ลืมตา','มองเห็น'],hold:.2,tint:'#101B3D',key:'#36C5F0',env:['lab','holoEye'],cam:{p:[0,2.5,8],t:[0,1.4,0],f:38,m:'push'},a:{x:.5,y:.72,pose:'jump',face:'surprised'},props:[{k:'magnifier',x:.8,y:.4,s:.8,at:'สงสัย'}],card:{type:'text',text:'ทำไมเราตาจึงมองเห็น?',at:'ทำไมเรา',dur:2.5},sfx:['pop','whoosh'],tr:'zoom'},
+{n:'สวัสดี! ฉันคือลูกตา ผู้ช่วยคนสำคัญในการมองเห็นของเธอ!',hl:['ลูกตา','การมองเห็น'],hold:.1,tint:'#101B3D',key:'#FFD166',env:['lab','holoEye'],cam:{p:[0,1.8,5],t:[0,1.4,0],f:35,m:'push'},a:{x:.5,y:.7,pose:'wave',face:'happy'},props:[],card:null,sfx:['ding'],tr:'cut'},
+{n:'แต่รู้ไหม... ฉันไม่ได้มองเห็นได้ด้วยตัวเองนะ เพราะทุกอย่างเริ่มต้นจากแสง!',hl:['ไม่ได้มองเห็น','แสง'],hold:.1,tint:'#101B3D',key:'#FFFFFF',env:['lab','light'],cam:{p:[3,2,7],t:[0,1.3,0],f:40,m:'pan'},a:{x:.35,y:.7,pose:'point',face:'surprised'},props:[{k:'bulb',x:.75,y:.4,s:.9,at:'แสง'}],card:{type:'text',text:'การมองเห็นเริ่มต้นจากแสง',at:'เริ่มต้นจากแสง',dur:2.5},sfx:['whoosh'],tr:'flash'},
+{n:'เมื่อแสงสะท้อนจากวัตถุ เดินทางเข้ามาทางกระจกตา แล้วผ่านรูม่านตาเข้าสู่ภายในดวงตา',hl:['แสงสะท้อน','กระจกตา','รูม่านตา'],hold:.1,tint:'#7657D5',key:'#FFFFFF',env:['eye'],mode:'cornea',cam:{p:[0,2,9],t:[0,1,0],f:42,m:'push'},a:{x:.2,y:.78,pose:'point',face:'happy'},cs:.5,es:.85,ey:2.3,props:[],card:{type:'text',text:'แสง → กระจกตา → รูม่านตา',at:'กระจกตา',dur:2.5},sfx:['whoosh'],tr:'zoom'},
+{n:'จากนั้น เลนส์ตาจะช่วยหักเหแสง ให้ไปตกบนจอประสาทตาอย่างเหมาะสม',hl:['เลนส์ตา','หักเหแสง','จอประสาทตา'],hold:.1,tint:'#36C5F0',key:'#FFFFFF',env:['eye'],mode:'lens',cam:{p:[0,1.5,5],t:[0,1,0],f:32,m:'push'},a:{x:.18,y:.8,pose:'point',face:'happy'},cs:.4,es:.7,ey:1.7,props:[],card:{type:'text',text:'เลนส์ตาช่วยหักเหและรวมแสง',at:'เลนส์ตา',dur:2.5},sfx:['ding'],tr:'cut'},
+{n:'บนจอประสาทตา มีเซลล์รับแสงที่สำคัญ ทั้งเซลล์รูปแท่งและเซลล์รูปกรวย',hl:['จอประสาทตา','เซลล์รับแสง','เซลล์รูปแท่ง','เซลล์รูปกรวย'],hold:.1,tint:'#7657D5',key:'#36C5F0',env:['cells'],cam:{p:[3,2,7],t:[0,1,0],f:42,m:'pan'},a:{x:.12,y:.8,pose:'think',face:'surprised'},cs:.5,props:[],card:{type:'compare',title:'เซลล์รับแสง 2 ชนิด',l:['เซลล์รูปแท่ง','ไวต่อแสง ช่วยในการมองเห็นในที่แสงน้อย'],r:['เซลล์รูปกรวย','ช่วยในการมองเห็นสีและรายละเอียด'],at:'เซลล์รูปแท่ง',dur:4},sfx:['pop'],tr:'zoom'},
+{n:'พวกมันจะเปลี่ยนพลังงานแสง ให้กลายเป็นสัญญาณไฟฟ้า ส่งต่อผ่านเส้นประสาทตาไปยังสมอง',hl:['พลังงานแสง','สัญญาณไฟฟ้า','เส้นประสาทตา','สมอง'],hold:.1,tint:'#101B3D',key:'#36C5F0',env:['nerve','brain'],cam:{p:[0,2,9],t:[0,1.5,0],f:40,m:'push'},a:{x:.18,y:.78,pose:'run',face:'happy',mv:{x:.72,y:.7}},cs:.55,props:[],card:{type:'text',text:'พลังงานแสง → สัญญาณไฟฟ้า → สมอง',at:'สัญญาณไฟฟ้า',dur:3},sfx:['glitch','whoosh'],tr:'flash'},
+{n:'แล้วสมองก็ประมวลผลสัญญาณเหล่านั้น จนเกิดเป็นภาพที่เราเห็น!',hl:['สมอง','ประมวลผล','ภาพ'],hold:.2,tint:'#101B3D',key:'#FFD166',env:['brain'],big:1,cam:{p:[0,2,7],t:[0,1.5,0],f:38,m:'push'},a:{x:.25,y:.8,pose:'cheer',face:'happy'},cs:.6,props:[],card:{type:'text',text:'สมองประมวลผลจนเกิดการรับรู้ภาพ',at:'เกิดเป็นภาพ',dur:2.5},sfx:['ding'],tr:'fade'},
+{n:'สรุปง่าย ๆ นะ... ตารับแสง แต่สมองเป็นผู้สร้างการรับรู้ภาพ!',hl:['ตารับแสง','สมอง','การรับรู้ภาพ'],hold:.3,tint:'#101B3D',key:'#FFD166',env:['lab','holoEye','holoBrain'],cam:{p:[0,2.5,7],t:[0,1.4,0],f:38,m:'push'},a:{x:.5,y:.72,pose:'point',face:'happy'},props:[],card:{type:'text',text:'ตารับแสง แต่สมองสร้างการรับรู้ภาพ',at:'ตารับแสง',dur:3},sfx:['ding'],tr:'fade'},
+{n:'คราวนี้รู้หรือยังว่า... การมองเห็นมหัศจรรย์กว่าที่คิด!',hl:['การมองเห็น','มหัศจรรย์'],hold:1,tint:'#101B3D',key:'#FFD166',env:['lab','holoEye','holoBrain'],confetti:1,cam:{p:[0,3,9],t:[0,1.5,0],f:40,m:'pull'},a:{x:.5,y:.76,pose:'wave',face:'happy'},cs:.8,props:[],card:{type:'end',badge:'รู้ไว้ใช่ว่า',head:'การมองเห็นมหัศจรรย์กว่าที่คิด!',sub:'ดวงตารับแสง สมองประมวลผลจนเกิดการรับรู้ภาพ',cta:'ติดตามความรู้สนุก ๆ ได้ในตอนต่อไป',at:'มหัศจรรย์กว่าที่คิด',dur:99},sfx:['sparkle','ding'],tr:'fade'}];
+const N=S.length;
+/* ============ TIMING / SYNC ============ */
+let A=null,B=[],baseB=[],adj=new Array(N+1).fill(0),DUR=0,syncState='none',SFXE=[];
+function weights(){return S.map(s=>s.n.replace(/\s/g,'').length+(s.n.match(/\.\.\./g)||[]).length*4+(s.n.match(/[!?]/g)||[]).length*2)}
+function computeBase(){const w=weights(),tot=w.reduce((a,b)=>a+b,0);let a0=0,a1=tot/11,cum=0;
+ if(A){a0=A.s;a1=A.e}baseB=[0];
+ for(let i=1;i<N;i++){cum+=w[i-1];let b=a0+(a1-a0)*cum/tot;
+  if(A){let best=null,bd=.9;for(const c of A.pauses){const d=Math.abs(c-b);if(d<bd){bd=d;best=c}}if(best!==null)b=best}
+  baseB.push(b)}
+ baseB.push(a1);applyAdj()}
+function applyAdj(){B=baseB.map((b,i)=>i>0&&i<N?b+adj[i]:b);
+ for(let i=1;i<N;i++)B[i]=clamp(B[i],B[i-1]+.5,baseB[N]-.5*(N-i));
+ DUR=B[N]+Math.max(S[N-1].hold,2.5);
+ SFXE=[];S.forEach((s,i)=>s.sfx.forEach((k,j)=>SFXE.push({t:B[i]+.1+j*.45,k})));buildUI()}
+const sceneAt=t=>{for(let i=N-1;i>=0;i--)if(t>=B[i])return i;return 0};
+const anchor=(i,at)=>{const s=S[i],ix=s.n.indexOf(at),f=ix<0?.3:ix/s.n.length;return B[i]+f*(B[i+1]-B[i])};
+/* ============ THREE SCENE ============ */
+let R,cam,scene,out,ctx2,W=360,H=640,ch,envG={},keyL,spark,conf,rng,props={},brain,brainBig;
+const mats={};const M=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.5,metalness:.05},o));
+const mk=(g,m,x=0,y=0,z=0)=>{const o=new THREE.Mesh(g,m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;return o};
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function glow(c,o=.9){return new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o,blending:THREE.AdditiveBlending,depthWrite:false})}
+function buildChar(){const g=new THREE.Group(),P=ch={g};
+ g.add(mk(new THREE.SphereGeometry(.8,40,28),M('#F5F5F5',{roughness:.4}),0,1,0));
+ g.add(mk(new THREE.SphereGeometry(.815,40,16,0,Math.PI*2,Math.PI*.6,Math.PI*.4),M('#101B3D',{roughness:.9}),0,1,0));
+ const tr=mk(new THREE.TorusGeometry(.6,.03,8,40),M('#36C5F0'),0,.62,0);tr.rotation.x=Math.PI/2;tr.scale.set(1.2,1.2,1);tr.position.y=.55;
+ P.iris=mk(new THREE.CircleGeometry(.4,32),M('#2E8BFF',{emissive:'#0b3a8c',emissiveIntensity:.4}),0,1.12,.795);
+ P.pupil=mk(new THREE.CircleGeometry(.19,24),M('#000'),0,1.12,.805);
+ P.hi=mk(new THREE.CircleGeometry(.07,12),new THREE.MeshBasicMaterial({color:'#fff'}),.1,1.22,.81);
+ const gl=mk(new THREE.TorusGeometry(.47,.03,10,40),M('#101B3D',{metalness:.6}),0,1.12,.8);
+ P.mouth=mk(new THREE.SphereGeometry(.16,16,12),M('#7a1c3a'),0,.66,.76);P.mouth.scale.set(1,.3,.3);
+ P.bl=mk(new THREE.BoxGeometry(.3,.06,.05),M('#4a2c1a'),-.28,1.68,.7);P.br=mk(new THREE.BoxGeometry(.3,.06,.05),M('#4a2c1a'),.28,1.68,.7);
+ [P.iris,P.pupil,P.hi,gl,tr,P.mouth,P.bl,P.br].forEach(o=>g.add(o));
+ const limb=(x,y,len,col)=>{const p=new THREE.Group();p.position.set(x,y,0);p.add(mk(new THREE.CylinderGeometry(.09,.09,len,12),M(col),0,-len/2,0));p.add(mk(new THREE.SphereGeometry(.12,12,10),M('#F5F5F5'),0,-len,0));g.add(p);return p};
+ P.aL=limb(-.8,1,.5,'#F5F5F5');P.aR=limb(.8,1,.5,'#F5F5F5');P.lL=limb(-.3,.3,.3,'#101B3D');P.lR=limb(.3,.3,.3,'#101B3D');
+ return g}
+function buildEnv(sc){
+ const E=envG;const grp=n=>(E[n]=new THREE.Group(),E[n].visible=false,sc.add(E[n]),E[n]);
+ // lab
+ let g=grp('lab');g.add(mk(new THREE.CylinderGeometry(3.2,3.4,.2,48),M('#1a2b66',{metalness:.7,roughness:.25}),0,-.1,0));
+ const ring=mk(new THREE.TorusGeometry(3.1,.05,8,64),glow('#36C5F0'),0,.02,0);ring.rotation.x=Math.PI/2;g.add(ring);
+ for(let i=0;i<10;i++){const a=i/10*Math.PI*2,x=Math.cos(a)*5.5,z=-Math.abs(Math.sin(a))*5.5-2.5;g.add(mk(new THREE.CylinderGeometry(.18,.18,7,12),M('#9fd8ff',{transparent:true,opacity:.35,metalness:.3}),x,3,z));g.add(mk(new THREE.BoxGeometry(.5,.6,.5),M('#2a3f8f',{metalness:.5}),x*.8,.3,z*.7))}
+ const fl=mk(new THREE.PlaneGeometry(60,60),M('#0c1636',{metalness:.6,roughness:.3}),0,-.22,-10);fl.rotation.x=-Math.PI/2;g.add(fl);
+ // holograms
+ const hw=(r,c)=>mk(new THREE.SphereGeometry(r,16,12),new THREE.MeshBasicMaterial({color:c,wireframe:true,transparent:true,opacity:.6}));
+ g=grp('holoEye');E.holoEye.he=hw(.7,'#36C5F0');E.holoEye.he.position.set(0,3.6,-1.2);g.add(E.holoEye.he);
+ const ir=mk(new THREE.CircleGeometry(.25,24),glow('#2E8BFF'),0,0,.69);E.holoEye.he.add(ir);
+ g=grp('holoBrain');E.holoBrain.hb=new THREE.Group();E.holoBrain.hb.position.set(1.7,3.2,-1.5);E.holoBrain.hb.scale.setScalar(.7);g.add(E.holoBrain.hb);
+ // light
+ g=grp('light');const beam=mk(new THREE.CylinderGeometry(.35,.12,7,20,1,true),glow('#FFFFFF',.35),-2.4,1.8,0);beam.rotation.z=Math.PI/2-.25;g.add(beam);E.light.beam=beam;
+ const pr=mk(new THREE.OctahedronGeometry(.6),M('#cfeaff',{transparent:true,opacity:.6,metalness:.2,roughness:.05}),-2.6,1.4,1.4);g.add(pr);E.light.pr=pr;
+ for(let i=0;i<6;i++){const s=mk(new THREE.SphereGeometry(.06),glow('#fff'),0,0,0);s.castShadow=false;g.add(s);(E.light.ps=E.light.ps||[]).push(s)}
+ // eye
+ g=grp('eye');const eg=E.eye.eg=new THREE.Group();g.add(eg);
+ eg.add(mk(new THREE.SphereGeometry(1.5,40,28),M('#F47CA8',{transparent:true,opacity:.32,roughness:.2}),0,0,0));
+ const cor=mk(new THREE.SphereGeometry(.85,32,20),M('#8fe3ff',{transparent:true,opacity:.35,roughness:.05}),0,0,1.0);eg.add(cor);
+ const iris=mk(new THREE.RingGeometry(.2,.8,32),M('#2E8BFF',{side:THREE.DoubleSide}),0,0,1.18);eg.add(iris);
+ const lens=mk(new THREE.SphereGeometry(.55,28,20),M('#FFD166',{transparent:true,opacity:.55,roughness:.1}),0,0,.8);lens.scale.set(1,1,.45);eg.add(lens);
+ const ret=mk(new THREE.SphereGeometry(1.48,40,20,0,Math.PI*2,Math.PI*.62,Math.PI*.38),M('#F47CA8',{side:THREE.DoubleSide,emissive:'#7a2a50',emissiveIntensity:.5}),0,0,0);ret.rotation.x=0;eg.add(ret);
+ E.eye.ray=[];for(let i=0;i<5;i++)for(let j=0;j<7;j++){const s=mk(new THREE.SphereGeometry(.05+.012*(7-j)/7),glow('#fff',.4+.6*(1-j/7)),0,0,0);s.castShadow=false;eg.add(s);E.eye.ray.push({s,i,j})}
+ eg.rotation.y=-Math.PI/2;
+ // cells
+ g=grp('cells');E.cells.items=[];for(let i=0;i<9;i++){const rod=i%2==0,x=(i-4)*.55;const m=rod?mk(new THREE.CylinderGeometry(.14,.14,1.5,14),M('#36C5F0',{emissive:'#0a5a78',emissiveIntensity:.6}),x,1.6,0):mk(new THREE.ConeGeometry(.26,1.5,16),M('#F47CA8',{emissive:'#7a2a50',emissiveIntensity:.5}),x,1.6,0);m.userData={rod,x};g.add(m);E.cells.items.push(m)}
+ g.add(mk(new THREE.BoxGeometry(5.6,.4,1),M('#7657D5',{emissive:'#2a1a66',emissiveIntensity:.6}),0,.72,0));
+ // nerve
+ g=grp('nerve');const cv=new THREE.CatmullRomCurve3([new THREE.Vector3(-1.9,.6,0),new THREE.Vector3(-.6,1.8,-.8),new THREE.Vector3(.6,2.4,-1.2),new THREE.Vector3(1.5,3.4,-1.6)]);E.nerve.cv=cv;
+ g.add(mk(new THREE.TubeGeometry(cv,40,.12,10),M('#F47CA8',{emissive:'#7a2a50',emissiveIntensity:.5,transparent:true,opacity:.75})));
+ E.nerve.sg=[];for(let i=0;i<10;i++){const s=mk(new THREE.SphereGeometry(.1),glow('#FFD166'),0,0,0);s.castShadow=false;g.add(s);E.nerve.sg.push(s)}
+ // brain
+ g=grp('brain');const mkBrain=()=>{const b=new THREE.Group();[[0,0,0,1],[-.6,.2,.2,.7],[.6,.2,.2,.7],[-.4,-.3,.3,.6],[.4,-.3,.3,.6],[0,.5,0,.6],[0,-.1,-.6,.7]].forEach(([x,y,z,r])=>b.add(mk(new THREE.SphereGeometry(r*.8,20,16),M('#F47CA8',{emissive:'#7a2a50',emissiveIntensity:.6,roughness:.6}),x,y,z)));return b};
+ brain=mkBrain();E.brain.add(brain);E.holoBrain.hb.add(mkBrain());
+ E.brain.bg=brain;
+ // sparkles/confetti
+ const mkPts=(n,sz,col)=>{const r=mulberry32(7),a=new Float32Array(n*3),b=[];for(let i=0;i<n;i++){b.push([r()*8-4,r()*6,r()*5-2,r()]);}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(a,3));const p=new THREE.Points(geo,new THREE.PointsMaterial({color:col,size:sz,transparent:true,opacity:.8,depthWrite:false,blending:THREE.AdditiveBlending}));p.userData.b=b;sc.add(p);return p};
+ spark=mkPts(90,.07,'#FFD166');conf=mkPts(70,.14,'#F47CA8');
+ // props
+ const mg=new THREE.Group();const lens2=mk(new THREE.TorusGeometry(.5,.07,10,30),M('#FFD166',{metalness:.6}),0,0,0);mg.add(lens2,mk(new THREE.CylinderGeometry(.06,.06,.7,10),M('#FFD166'),-.5,-.5,0));mg.children[1].rotation.z=.8;sc.add(mg);props.magnifier=mg;
+ const bg2=new THREE.Group();bg2.add(mk(new THREE.SphereGeometry(.45,24,20),M('#FFD166',{emissive:'#FFD166',emissiveIntensity:.9}),0,0,0),mk(new THREE.CylinderGeometry(.18,.2,.3,12),M('#999',{metalness:.7}),0,-.55,0));sc.add(bg2);props.bulb=bg2;}
+/* ============ INIT 3D ============ */
+function init3D(){
+ if(!window.THREE)return false;
+ try{R=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});}catch(e){showErr('อุปกรณ์นี้ใช้ WebGL ไม่ได้ — ลองเบราว์เซอร์อื่นหรืออัปเดตระบบ');return false}
+ R.shadowMap.enabled=true;R.shadowMap.type=THREE.PCFSoftShadowMap;
+ scene=new THREE.Scene();cam=new THREE.PerspectiveCamera(38,9/16,.1,100);
+ scene.add(new THREE.HemisphereLight('#7fb6ff','#2a1a66',.7));
+ keyL=new THREE.SpotLight('#36C5F0',2.2,40,.7,.5);keyL.position.set(-4,8,6);keyL.castShadow=true;keyL.shadow.mapSize.set(1024,1024);scene.add(keyL,keyL.target);
+ const rim=new THREE.DirectionalLight('#7657D5',.9);rim.position.set(4,3,-4);scene.add(rim);
+ buildEnv(scene);scene.add(buildChar());return true}
+function setSize(w,h){W=w;H=h;out.width=w;out.height=h;R.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}
+/* ============ RENDER AT TIME ============ */
+const hex=c=>new THREE.Color(c);
+function mouthAmp(t,i){if(A){const k=Math.floor(t/.02),v=A.env[k]||0;return clamp(v)}return t<B[N]?Math.max(0,Math.sin(t*13)*.5+.3):0}
+function placeProp(o,s,sx,sy,sc){o.visible=sc>0;o.position.set((sx-.5)*4,(1-sy)*5.3,0);o.scale.setScalar(Math.max(.001,sc*s)*1.1)}
+function updateWorld(t,i){const s=S[i],t0=B[i],te=B[i+1],lt=t-t0,p=clamp(lt/(te-t0));
+ const c=hex(s.tint).multiplyScalar(.55);scene.background=c;scene.fog=new THREE.Fog(c,14,45);
+ keyL.color.set(s.key);keyL.position.set(-4+Math.sin(i)*3,8,6);keyL.target.position.set(0,1,0);
+ for(const k in envG)envG[k].visible=s.env.includes(k);
+ const E=envG;
+ if(E.holoEye.visible){E.holoEye.he.rotation.y=t*.8;E.holoEye.he.position.y=3.6+Math.sin(t*1.5)*.1}
+ if(E.holoBrain.visible){E.holoBrain.hb.rotation.y=-t*.7}
+ if(E.light.visible){const b=E.light.beam;b.material.opacity=.3+.15*Math.sin(t*6);E.light.pr.rotation.y=t;E.light.ps.forEach((q,k)=>{const u=(t*.5+k/6)%1;q.position.set(-4+u*4.2,2.6-u*1.1+Math.sin(k)*.2,0)})}
+ if(E.eye.visible){const eg=E.eye.eg,es=s.es||1;E.eye.position.set(0,s.ey||2,-1);E.eye.scale.setScalar(es);
+  E.eye.ray.forEach(({s:m,i:ri,j})=>{const yy=(ri-2)*.28,u=((t*.45+j*.045+ri*.07)%1);const z=lerp(3.4,-1.45,u);let y=yy;
+   if(z<1.2){const pupilGate=Math.abs(yy)<.45;y=s.mode==='lens'?(z<.8?yy*(1-clamp((.8-z)/2.25)):yy):yy*(z<1.05?.7:1)*(s.mode==='cornea'?1:1)}
+   m.position.set(0,y,z);m.visible=!(z<1.18&&z>.9&&Math.abs(yy)>.5)})}
+ if(E.cells.visible){E.cells.position.y=0;E.cells.items.forEach(m=>{m.rotation.z=Math.sin(t*2+m.userData.x)*.06;m.scale.y=1+Math.sin(t*3+m.userData.x)*.05})}
+ if(E.nerve.visible){E.nerve.sg.forEach((m,k)=>{const u=(t*.35+k/10)%1;m.position.copy(E.nerve.cv.getPoint(u))});}
+ if(E.brain.visible){const big=s.big;E.brain.position.set(big?0:1.5,big?3:3.5,big?-1:-1.6);E.brain.scale.setScalar(big?1.5:.9);E.brain.bg.rotation.y=t*.5;const pu=1+Math.sin(t*4)*.04;E.brain.bg.scale.setScalar(pu)}
+ // props
+ s.props.forEach(pr=>{const o=props[pr.k],ta=anchor(i,pr.at),q=clamp((t-ta)/.5);placeProp(o,pr.s,pr.x,pr.y,q>0?back(q):0);o.rotation.y=t*1.5});
+ for(const k in props)if(!s.props.some(p=>p.k===k))props[k].visible=false;
+ // particles
+ [[spark,1],[conf,s.confetti?1:0]].forEach(([pts,on])=>{pts.visible=!!on;if(!on)return;const a=pts.geometry.attributes.position;pts.userData.b.forEach((b,k)=>{const y=pts===conf?6-((t*1.2+b[3]*6)%6):(b[1]+Math.sin(t*.8+b[3]*9)*.4)%6;a.setXYZ(k,b[0]+Math.sin(t+b[3]*7)*.3,y,b[2])});a.needsUpdate=true});
+ // camera
+ const cc=s.cam,m=cam.aspect<1?1+(1-cam.aspect)*.9:1,tg=cc.t,e=ease(p);
+ let pos=cc.p.slice();if(cc.m==='push')pos=pos.map((v,k)=>lerp(v,tg[k]+(v-tg[k])*.85,e));
+ else if(cc.m==='pull')pos=pos.map((v,k)=>lerp(tg[k]+(v-tg[k])*.8,v,e));else pos[0]=lerp(pos[0]-1.2,pos[0]+.6,e);
+ cam.position.set(tg[0]+(pos[0]-tg[0])*m,tg[1]+(pos[1]-tg[1])*m,tg[2]+(pos[2]-tg[2])*m);cam.fov=cc.f;cam.updateProjectionMatrix();cam.lookAt(tg[0],tg[1],tg[2]);
+ // character
+ const a=s.a,P=ch,sc=s.cs||1;let x=(a.x-.5)*4.5,y=-(a.y-.72)*2;if(a.mv)x=lerp(x,(a.mv.x-.5)*4.5,ease(p));
+ const g=P.g;g.scale.setScalar(sc);let bob=Math.sin(t*2.2)*.03,zr=0,aL=.15,aR=-.15,lL=0,lR=0,sq=1;
+ aL=-.2;aR=.2;
+ if(a.pose==='jump'){const u=Math.abs(Math.sin(Math.min(lt,1.2)*Math.PI*1.4));bob=u*.5;sq=1+(.5-u)*.12;aL=-1.8*u-.2;aR=1.8*u+.2}
+ else if(a.pose==='wave'){aR=2.6+Math.sin(lt*9)*.45;bob+=Math.abs(Math.sin(lt*3))*.05}
+ else if(a.pose==='point'){aR=1.5+Math.sin(lt*3)*.08;zr=Math.sin(lt*2)*.04}
+ else if(a.pose==='think'){aR=2.6;zr=.12;bob+=Math.sin(lt*3)*.02}
+ else if(a.pose==='cheer'){const u=Math.abs(Math.sin(lt*5));bob=u*.25;aL=-2.7;aR=2.7+Math.sin(lt*8)*.2}
+ else if(a.pose==='run'){const w=Math.sin(lt*12);bob=Math.abs(w)*.15;aL=w*.9-.2;aR=-w*.9+.2;lL=w*.8;lR=-w*.8;zr=-.1}
+ g.position.set(x,y+bob,0);g.rotation.z=zr;g.rotation.y=Math.sin(lt*1.1)*.12;g.scale.set(sc*(2-sq),sc*sq,sc);
+ P.aL.rotation.z=aL;P.aR.rotation.z=aR;P.lL.rotation.x=lL;P.lR.rotation.x=lR;
+ const sur=a.face==='surprised',blink=(t%3.1)<.12?.12:1,amp=mouthAmp(t,i);
+ P.iris.scale.set(sur?1.12:1,blink*(sur?1.12:1),1);P.pupil.scale.set(1,blink,1);
+ P.bl.position.y=P.br.position.y=sur?1.78:1.66;P.bl.rotation.z=sur?.15:-.1;P.br.rotation.z=sur?-.15:.1;
+ const o=sur?Math.max(.55,amp):amp;P.mouth.scale.set(sur?.8:(1.2-amp*.3),.25+o*1.6,.3)}
+/* ============ 2D OVERLAY: CARDS + SUBTITLES ============ */
+const seg=window.Intl&&Intl.Segmenter?new Intl.Segmenter('th',{granularity:'word'}):null;
+const words=txt=>seg?[...seg.segment(txt)].map(x=>x.segment):(txt.match(/\S{1,6}|\s+/g)||[]);
+const FONT='Prompt,"Noto Sans Thai",Sarabun,system-ui,sans-serif';
+function wrap(c,txt,mw){const L=[];let cur='';for(const w of words(txt)){if(c.measureText(cur+w).width>mw&&cur.trim()){L.push(cur.trim());cur=w}else cur+=w}if(cur.trim())L.push(cur.trim());return L}
+function rr(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+function panel(c,x,y,w,h,col){c.save();c.shadowColor='rgba(0,0,0,.5)';c.shadowBlur=W*.03;c.shadowOffsetY=W*.01;rr(c,x,y,w,h,W*.035);c.fillStyle=col||'rgba(16,27,61,.88)';c.fill();c.restore();c.lineWidth=Math.max(2,W*.003);c.strokeStyle=PAL.cy;rr(c,x,y,w,h,W*.035);c.stroke()}
+function textBlock(c,txt,cx,y,mw,fs,col,wt){c.font=(wt||700)+' '+fs+'px '+FONT;c.fillStyle=col;c.textAlign='center';c.textBaseline='top';const L=wrap(c,txt,mw);L.forEach((l,k)=>c.fillText(l,cx,y+k*fs*1.35));return L.length*fs*1.35}
+function drawCard(c,i,t){const s=S[i],k=s.card;if(!k)return;const ta=anchor(i,k.at),end=k.type==='end'?DUR:Math.min(ta+k.dur,B[i+1]+S[i].hold+.4);
+ if(t<ta||t>end)return;let q=back(clamp((t-ta)/.4)),o=clamp((end-t)/.25);const pw=W>H?W*.6:W*.88,x=(W-pw)/2,fs=Math.round(Math.min(W,H*.62)*.056),top=H*.07;
+ c.save();c.globalAlpha=clamp(o)*clamp((t-ta)/.2);c.translate(W/2,top);c.scale(q,q);c.translate(-W/2,-top);
+ const mw=pw-fs*1.6;
+ if(k.type==='text'){c.font='700 '+fs+'px '+FONT;const h=wrap(c,k.text,mw).length*fs*1.35+fs;panel(c,x,top,pw,h);textBlock(c,k.text,W/2,top+fs*.5,mw,fs,PAL.tx)}
+ else if(k.type==='compare'){c.font='700 '+fs*.8+'px '+FONT;const f2=fs*.78,bw=pw-fs*1.2;let hs=[k.l,k.r].map(b=>{c.font='700 '+f2+'px '+FONT;return f2*1.4+wrap(c,b[1],bw-fs).length*f2*1.3+fs*.5});const th=fs*1.5,h=th+hs[0]+hs[1]+fs*.9;panel(c,x,top,pw,h);textBlock(c,k.title,W/2,top+fs*.3,mw,fs,PAL.go);let y=top+th+fs*.2;
+  [[k.l,PAL.cy,hs[0]],[k.r,PAL.pk,hs[1]]].forEach(([b,col,hh])=>{rr(c,x+fs*.5,y,pw-fs,hh-fs*.15,fs*.4);c.fillStyle='rgba(118,87,213,.45)';c.fill();textBlock(c,b[0],W/2,y+fs*.12,bw,f2,col);c.font='500 '+f2*.95+'px '+FONT;textBlock(c,b[1],W/2,y+f2*1.5,bw-fs,f2*.95,PAL.tx,500);y+=hh})}
+ else{const ew=W>H?W*.6:W*.9,ex=(W-ew)/2,f1=fs*1.15;c.font='700 '+f1+'px '+FONT;const hl=wrap(c,k.head,ew-fs*2).length*f1*1.35;c.font='500 '+fs*.8+'px '+FONT;const sl=wrap(c,k.sub,ew-fs*2).length*fs*.8*1.35;const h=fs*2.2+hl+sl+fs*2.4;panel(c,ex,top,ew,h,'rgba(16,27,61,.93)');
+  c.font='700 '+fs*.8+'px '+FONT;const bwid=c.measureText(k.badge).width+fs*1.4;rr(c,W/2-bwid/2,top+fs*.5,bwid,fs*1.2,fs*.6);c.fillStyle=PAL.go;c.fill();c.fillStyle='#101B3D';c.textAlign='center';c.textBaseline='middle';c.fillText(k.badge,W/2,top+fs*1.1);
+  let y=top+fs*2;textBlock(c,k.head,W/2,y,ew-fs*2,f1,PAL.go);y+=hl+fs*.3;textBlock(c,k.sub,W/2,y,ew-fs*2,fs*.8,PAL.tx,500);y+=sl+fs*.4;textBlock(c,k.cta,W/2,y,ew-fs*2,fs*.7,PAL.cy,500)}
+ c.restore()}
+const chunkCache=[];
+function chunks(i){if(chunkCache[i]&&chunkCache[i].W===W>=H)return chunkCache[i].c;const lim=W>=H?34:20,ws=words(S[i].n),C=[];let cur='';for(const w of ws){if(cur.replace(/\s/g,'').length+w.replace(/\s/g,'').length>lim&&cur.trim()){C.push(cur.trim());cur=w}else cur+=w}if(cur.trim())C.push(cur.trim());chunkCache[i]={W:W>=H,c:C};return C}
+function drawSub(c,i,t){const s=S[i],t0=B[i],te=B[i+1];if(t<t0||t>te+.15)return;const C=chunks(i),tot=C.reduce((a,b)=>a+b.replace(/\s/g,'').length,0);let u=(t-t0)/(te-t0)*tot,acc=0,ch2=C[C.length-1];
+ for(const k of C){acc+=k.replace(/\s/g,'').length;if(u<=acc){ch2=k;break}}
+ const fs=Math.round(Math.min(W,H*.62)*.062);c.font='700 '+fs+'px '+FONT;const L=wrap(c,ch2,W*.86).slice(0,2),y0=H*(W>H?.86:.8)-L.length*fs*1.3;
+ c.textBaseline='top';c.lineJoin='round';
+ L.forEach((l,k)=>{const ws=words(l),tw=c.measureText(l).width;let x=(W-tw)/2;ws.forEach(w=>{const hi=w.trim().length>1&&s.hl.some(h=>h.indexOf(w.trim())>=0||w.indexOf(h)>=0);c.textAlign='left';c.lineWidth=fs*.22;c.strokeStyle='rgba(6,12,38,.95)';c.strokeText(w,x,y0+k*fs*1.3);c.fillStyle=hi?PAL.go:PAL.tx;c.fillText(w,x,y0+k*fs*1.3);x+=c.measureText(w).width})})}
+function drawTrans(c,i,t){const s=S[i],lt=t-B[i];if(i===0||lt>.3||s.tr==='cut')return;const q=1-lt/.3;c.save();c.globalAlpha=q*(s.tr==='flash'?.9:.7);c.fillStyle=s.tr==='flash'?'#fff':'#101B3D';c.fillRect(0,0,W,H);c.restore()}
+let frames=0;
+function renderAt(t){if(!R)return;t=clamp(t,0,DUR);const i=sceneAt(t);updateWorld(t,i);R.render(scene,cam);ctx2.drawImage(R.domElement,0,0,W,H);
+ drawCard(ctx2,i,t);drawSub(ctx2,i,t);drawTrans(ctx2,i,t);frames++}
+/* ============ AUDIO ENGINE ============ */
+let AC,bus,mon,recDest,voiceGain,sfxGain,muted=false,srcNode=null;
+function ensureAC(){if(AC){if(AC.state==='suspended')AC.resume();return AC}
+ const C=window.AudioContext||window.webkitAudioContext;if(!C){showErr('เบราว์เซอร์ไม่รองรับ AudioContext');return null}
+ AC=new C();const comp=AC.createDynamicsCompressor();bus=comp;mon=AC.createGain();mon.gain.value=muted?0:1;comp.connect(mon);mon.connect(AC.destination);
+ recDest=AC.createMediaStreamDestination();comp.connect(recDest);voiceGain=AC.createGain();voiceGain.gain.value=1;voiceGain.connect(comp);sfxGain=AC.createGain();sfxGain.gain.value=.4;sfxGain.connect(comp);return AC}
+function noiseBuf(d){const b=AC.createBuffer(1,AC.sampleRate*d,AC.sampleRate),a=b.getChannelData(0),r=mulberry32(3);for(let i=0;i<a.length;i++)a[i]=r()*2-1;return b}
+function sfx(k){if(!AC)return;const n=AC.currentTime,g=AC.createGain();g.connect(sfxGain);
+ const osc=(type,f0,f1,d,v)=>{const o=AC.createOscillator();o.type=type;o.frequency.setValueAtTime(f0,n);o.frequency.exponentialRampToValueAtTime(f1,n+d);g.gain.setValueAtTime(v,n);g.gain.exponentialRampToValueAtTime(.001,n+d);o.connect(g);o.start(n);o.stop(n+d+.05)};
+ if(k==='pop')osc('sine',700,200,.12,.9);else if(k==='ding')osc('sine',1320,1320,.5,.7);else if(k==='glitch')osc('square',300,90,.2,.3);
+ else if(k==='sparkle'){[2000,2600,3300].forEach((f,j)=>setTimeout(()=>sfx('ding'),j*70))}
+ else{const s=AC.createBufferSource();s.buffer=noiseBuf(.5);const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.setValueAtTime(400,n);f.frequency.exponentialRampToValueAtTime(3000,n+.4);g.gain.setValueAtTime(.001,n);g.gain.exponentialRampToValueAtTime(.8,n+.15);g.gain.exponentialRampToValueAtTime(.001,n+.45);s.connect(f);f.connect(g);s.start(n)}}
+async function analyze(buf){const d=buf.getChannelData(0),hop=Math.round(buf.sampleRate*.02),n=Math.floor(d.length/hop),env=new Float32Array(n);
+ for(let i=0;i<n;i++){let s=0;for(let j=0;j<hop;j++){const v=d[i*hop+j];s+=v*v}env[i]=Math.sqrt(s/hop);if(i%400==0)await new Promise(r=>setTimeout(r))}
+ const sorted=Array.from(env).sort((a,b)=>a-b),p95=sorted[Math.floor(n*.95)]||1e-6,thr=Math.max(p95*.1,1e-5);
+ let a=0,b=n-1;while(a<n&&env[a]<thr)a++;while(b>0&&env[b]<thr)b--;
+ const pauses=[];let run=0;for(let i=a;i<=b;i++){if(env[i]<thr){run++}else{if(run>=11)pauses.push((i-run/2)*.02);run=0}}
+ return{buf,env:env.map(v=>v/(p95*1.2)),s:a*.02,e:(b+1)*.02,pauses,dur:buf.duration}}
+$('file').onchange=async e=>{const f=e.target.files[0];if(!f)return;stopPlay(0);const ai=$('ainfo');ai.textContent='กำลังอ่านไฟล์...';
+ try{const ac=ensureAC();if(!ac)return;const ab=await f.arrayBuffer();ai.textContent='กำลังถอดรหัสเสียง...';
+  const buf=await new Promise((ok,no)=>ac.decodeAudioData(ab,ok,no));ai.textContent='กำลังวิเคราะห์เสียง...';A=await analyze(buf);
+  syncState=Math.abs(A.dur-META.audioDur)<3?'approx':'adjust';adj.fill(0);computeBase();
+  ai.innerHTML=`${f.name} · ${(f.size/1048576).toFixed(2)} MB · ${f.type||'audio'} · ${buf.duration.toFixed(2)} วินาที · ${buf.sampleRate} Hz · ${buf.numberOfChannels} ch<br>วิเคราะห์เสียงแล้ว: เสียงพูด ${A.s.toFixed(2)}–${A.e.toFixed(2)} วินาที, พบช่วงเงียบ ${A.pauses.length} จุด`+(syncState==='adjust'?'<br>⚠ ความยาวต่างจากต้นฉบับ (50.91 วินาที) — ควรตรวจและปรับซิงก์':'');
+  renderAt(0)}catch(err){A=null;showErr('ถอดรหัสไฟล์เสียงไม่ได้ (ไฟล์อาจเสีย) — ลองไฟล์ MP3/WAV อื่น');ai.textContent='นำเข้าไม่สำเร็จ'}};
+/* ============ PLAYBACK ============ */
+let playing=false,tPos=0,startC=0,lastT=0,raf=0,exporting=null;
+const curT=()=>playing?clamp(AC.currentTime-startC,0,DUR):tPos;
+function startVoice(t){killVoice();if(A&&t<A.buf.duration){srcNode=AC.createBufferSource();srcNode.buffer=A.buf;srcNode.connect(voiceGain);srcNode.start(0,t)}}
+function killVoice(){if(srcNode){try{srcNode.stop()}catch(e){}srcNode=null}}
+function play(){if(!R)return;if(!ensureAC())return;if(tPos>=DUR-.05)tPos=0;playing=true;startC=AC.currentTime-tPos;lastT=tPos;startVoice(tPos);$('play').textContent='⏸ หยุดชั่วคราว';loop()}
+function pause(){if(!playing)return;tPos=curT();playing=false;killVoice();$('play').textContent='▶ เล่น';cancelAnimationFrame(raf)}
+function stopPlay(t){pause();tPos=t||0;renderAt(tPos);ui(tPos)}
+function seek(t){const was=playing;if(was)pause();tPos=clamp(t,0,DUR);renderAt(tPos);ui(tPos);if(was)play()}
+function loop(){raf=requestAnimationFrame(loop);const t=curT();SFXE.forEach(e=>{if(e.t>=lastT&&e.t<t)sfx(e.k)});lastT=t;renderAt(t);ui(t);
+ if(t>=DUR-.001){if(exporting)finishExport();else{pause();tPos=DUR}}}
+const fmtT=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
+function ui(t){$('seek').value=DUR?t/DUR*1000:0;$('time').textContent=fmtT(t)+'/'+fmtT(DUR);const i=sceneAt(t);[...$('chips').children].forEach((b,k)=>b.classList.toggle('on',k===i))}
+function buildUI(){const ch=$('chips');ch.innerHTML='';S.forEach((s,i)=>{const b=document.createElement('button');b.textContent='S'+(i+1);b.onclick=()=>seek(B[i]+.02);ch.appendChild(b)});
+ const lab={none:'⏱ เวลาโดยประมาณ ยังไม่ซิงก์กับเสียงจริง',approx:'🟡 ซิงก์แบบประมาณ (approximate) จากเสียงจริง',adjust:'🔴 ต้องปรับซิงก์ (needs adjustment)'};
+ $('sync').textContent=lab[syncState]+' · ความยาววิดีโอ '+DUR.toFixed(2)+' วินาที';
+ $('sp').innerHTML='<table>'+S.map((s,i)=>`<tr><td>S${i+1}</td><td>${B[i].toFixed(2)}–${B[i+1].toFixed(2)}s</td><td>${adj[i]>=0?'+':''}${adj[i].toFixed(1)}</td><td>${i>0?`<button onclick="nudge(${i},-.1)">-0.1</button> <button onclick="nudge(${i},.1)">+0.1</button>`:'เริ่ม'}</td></tr>`).join('')+'</table>'}
+window.nudge=(i,d)=>{adj[i]=Math.round((adj[i]+d)*10)/10;applyAdj();if(syncState==='approx'&&A)syncState='approx';renderAt(curT())};
+$('play').onclick=()=>playing?pause():play();$('stop').onclick=()=>stopPlay(0);
+$('seek').oninput=e=>seek(e.target.value/1000*DUR);
+$('mute').onclick=()=>{muted=!muted;$('mute').textContent=muted?'🔇':'🔊';if(mon)mon.gain.value=muted?0:1};
+$('fs').onclick=()=>{const w=$('stage');(w.requestFullscreen||w.webkitRequestFullscreen||(()=>showErr('อุปกรณ์นี้ไม่รองรับเต็มจอ')) ).call(w)};
+$('sz').onclick=()=>{const s=$('safe');s.style.display=s.style.display==='block'?'none':'block'};
+/* ============ FORMAT ============ */
+function fmtDims(){const d=FM[$('fmt').value][+$('res').value];return d}
+const FM={'9:16':[[720,1280],[1080,1920]],'4:5':[[720,900],[1080,1350]],'1:1':[[720,720],[1080,1080]],'16:9':[[1280,720],[1920,1080]]};
+function applyPreview(){const [w,h]=fmtDims(),k=540/Math.min(w,h);setSize(Math.round(w*k/2)*2,Math.round(h*k/2)*2);chunkCache.length=0;$('out').style.aspectRatio=w+'/'+h;renderAt(curT())}
+$('fmt').onchange=$('res').onchange=()=>{if(!exporting)applyPreview()};
+/* ============ EXPORT (MediaRecorder) ============ */
+let rec,chunksR=[],exStart=0,lastUrl=null,wake=null,resultBlob=null,resultName='';
+function pickMime(){if(!window.MediaRecorder)return null;return['video/mp4;codecs=avc1,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||null}
+$('exp').onclick=async()=>{if(exporting||!R)return;
+ const mime=pickMime();if(!mime||!out.captureStream){showErr('เบราว์เซอร์นี้ไม่รองรับการบันทึกวิดีโอ (MediaRecorder/captureStream) — ลอง Chrome (Android) หรืออัปเดต Safari');return}
+ if(!ensureAC())return;stopPlay(0);
+ const [w,h]=fmtDims();
+ try{await document.fonts.ready;setSize(w,h);chunkCache.length=0;
+  const vs=out.captureStream(30),tracks=[...vs.getVideoTracks(),...recDest.stream.getAudioTracks()];
+  rec=new MediaRecorder(new MediaStream(tracks),{mimeType:mime,videoBitsPerSecond:w>1000?8e6:5e6});
+  chunksR=[];rec.ondataavailable=e=>{if(e.data&&e.data.size)chunksR.push(e.data)};
+  exporting={mime,w,h,cancelled:false};frames=0;exStart=performance.now();mon.gain.value=0;
+  try{if(navigator.wakeLock)wake=await navigator.wakeLock.request('screen')}catch(e){}
+  $('exp').disabled=true;$('cancel').disabled=false;$('est').textContent='กำลังบันทึก… ห้ามปิดหรือสลับหน้านี้ (ต้องใช้เวลาเท่าความยาววิดีโอ)';
+  rec.onstop=onRecStop;rec.start(500);tPos=0;play();prog()}catch(err){exporting=null;showErr('เริ่มสร้างวิดีโอไม่สำเร็จ: '+err.message+' — ลองลดเป็น 720p');applyPreview();$('exp').disabled=false}};
+function prog(){if(!exporting)return;const t=curT();$('prog').value=t/DUR*100;$('est').textContent=`กำลังบันทึก ${(t/DUR*100).toFixed(0)}% · เฟรม ${frames} · ${((performance.now()-exStart)/1000).toFixed(0)} วินาที · วิธี: MediaRecorder (${exporting.mime.split(';')[0]})`;setTimeout(prog,300)}
+function finishExport(){pause();tPos=DUR;if(rec&&rec.state!=='inactive')setTimeout(()=>rec.stop(),300)}
+$('cancel').onclick=()=>{if(!exporting)return;exporting.cancelled=true;pause();if(rec&&rec.state!=='inactive')rec.stop()};
+async function onRecStop(){const ex=exporting;exporting=null;if(wake){try{wake.release()}catch(e){}wake=null}
+ mon.gain.value=muted?0:1;$('exp').disabled=false;$('cancel').disabled=true;applyPreview();
+ if(ex.cancelled){$('est').textContent='ยกเลิกแล้ว';$('prog').value=0;return}
+ const blob=new Blob(chunksR,{type:ex.mime.split(';')[0]});chunksR=[];
+ if(!blob.size){showErr('ไฟล์ที่ได้ว่างเปล่า — ลองใหม่ที่ 720p');return}
+ const ext=ex.mime.startsWith('video/mp4')?'mp4':'webm';if(lastUrl)URL.revokeObjectURL(lastUrl);lastUrl=URL.createObjectURL(blob);resultBlob=blob;resultName='eye_vision_'+$('fmt').value.replace(':','x')+'.'+ext;
+ const v=$('rv');v.src=lastUrl;
+ await new Promise(r=>{v.onloadedmetadata=r;v.onerror=r;setTimeout(r,4000)});
+ if(v.error){showErr('ไฟล์ที่สร้างเปิดเล่นไม่ได้ในเบราว์เซอร์นี้ — ลองสร้างใหม่');return}
+ $('prog').value=100;$('est').textContent='สร้างวิดีโอสำเร็จ';$('res-card').style.display='block';
+ $('rinfo').innerHTML=[['ชื่อไฟล์',resultName],['ขนาดไฟล์',(blob.size/1048576).toFixed(2)+' MB'],['ความละเอียด',ex.w+'×'+ex.h],['อัตราส่วน',$('fmt').value],['FPS','30'],['Format',ext.toUpperCase()+' ('+blob.type+')'],['ระยะเวลา',(isFinite(v.duration)?v.duration:DUR).toFixed(1)+' วินาที']].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('');
+ $('hint').textContent=ext==='webm'?'ไฟล์เป็น WebM (เบราว์เซอร์นี้ไม่มี MP4) — บางแอปอาจต้องแปลงไฟล์ก่อนอัปโหลด':'';v.scrollIntoView({behavior:'smooth'})}
+$('share').onclick=async()=>{if(!resultBlob)return;const f=new File([resultBlob],resultName,{type:resultBlob.type});
+ if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:META.title});return}catch(e){if(e.name==='AbortError')return}}
+ const a=document.createElement('a');a.href=lastUrl;a.download=resultName;document.body.appendChild(a);a.click();a.remove();$('hint').textContent='ดาวน์โหลดแล้ว — เปิดจากแอป Files/Downloads (ระบบไม่ได้บันทึกลง Photos อัตโนมัติ)'};
+$('again').onclick=()=>{$('prog').value=0;$('est').textContent='พร้อมสร้างใหม่ — ไฟล์เดิมยังเก็บไว้จนกว่าจะสร้างไฟล์ใหม่สำเร็จ';window.scrollTo({top:0,behavior:'smooth'})};
+/* ============ BOOT ============ */
+out=$('out');ctx2=out.getContext('2d');computeBase();
+if(init3D()){applyPreview();ui(0);document.fonts&&document.fonts.ready.then(()=>renderAt(curT()))}
+else if(!window.__e&&!window.THREE)showErr('ระบบ 3D ไม่พร้อมใช้งาน');
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&exporting)showErr('หน้านี้ถูกพักระหว่างบันทึก — การ Export อาจเสียหาย ให้เปิดหน้านี้ค้างไว้')});
+</script></body></html>
